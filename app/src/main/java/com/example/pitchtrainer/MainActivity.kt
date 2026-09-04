@@ -3,49 +3,47 @@ package com.example.pitchtrainer
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.ui.Alignment
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.runtime.Composable
 
-import androidx.compose.foundation.background
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.foundation.layout.Arrangement
-
-// For FontWeight (Bold, ExtraBold, etc.)
-import androidx.compose.ui.text.font.FontWeight
-
-// For Icons (The Refresh icon)
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Refresh
-
-// For RoundedCornerShape (Making the button corners soft)
-import androidx.compose.foundation.shape.RoundedCornerShape
-
-import androidx.compose.foundation.lazy.grid.*
-import androidx.compose.material.icons.filled.Settings
-
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableStateOf
-
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.geometry.CornerRadius
-
-// Define the Night Colors
-private val DarkGray = Color(0xFF121212)
-private val SurfaceGray = Color(0xFF1E1E1E)
-private val AccentGold = Color(0xFFB58F00)
-private val SoftCyan = Color(0xFF03DAC5)
+enum class Panel { TUNE, GUESS }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,8 +53,8 @@ class MainActivity : ComponentActivity() {
                 colorScheme = darkColorScheme(
                     primary = AccentGold,
                     background = DarkGray,
-                    surface = SurfaceGray
-                )
+                    surface = SurfaceGray,
+                ),
             ) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     PitchApp()
@@ -68,153 +66,156 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PitchApp(vm: PitchViewModel = viewModel()) {
-    val sheetState = rememberModalBottomSheetState()
+fun PitchApp(
+    tuneVm: TuneViewModel = viewModel(),
+    guessVm: GuessViewModel = viewModel(),
+) {
+    var panel by remember { mutableStateOf(Panel.TUNE) }
     var showSettings by remember { mutableStateOf(false) }
-    // Wrap everything in a Column with a dark background
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier
-            .fillMaxSize()
-            .background(DarkGray) // Deep dark background
-            .padding(24.dp)
-    ) {
-        IconButton(
-            onClick = { showSettings = true },
-            modifier = Modifier.align(Alignment.End)
-        ) {
-            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+    var showAnalytics by remember { mutableStateOf(false) }
+    val settingsSheetState = rememberModalBottomSheetState()
+    val analyticsSheetState = rememberModalBottomSheetState()
+    val context = LocalContext.current
+
+    LaunchedEffect(panel) {
+        when (panel) {
+            Panel.TUNE -> {
+                guessVm.onHidden()
+                tuneVm.onVisible()
+            }
+            Panel.GUESS -> {
+                tuneVm.onHidden()
+                guessVm.onVisible()
+            }
         }
-        // Target Note with a soft glow color
-        Text(
-            text = vm.targetNoteName,
-            fontSize = 72.sp,
-            fontWeight = FontWeight.ExtraBold,
-            color = AccentGold
-        )
+    }
 
-        Text(
-            text = vm.feedback,
-            fontSize = 18.sp,
-            color = Color.LightGray.copy(alpha = 0.7f)
-        )
+    DisposableEffect(Unit) {
+        onDispose {
+            tuneVm.onHidden()
+            guessVm.onHidden()
+        }
+    }
 
-        Spacer(modifier = Modifier.height(50.dp))
-
-        // The Dial
-        Box(
-            contentAlignment = Alignment.Center,
+    Box(modifier = Modifier.fillMaxSize().background(DarkGray)) {
+        Column(
             modifier = Modifier
-                .fillMaxWidth()        // Spans the width of the screen
-                .height(150.dp)        // Fixed height for the "ribbon"
-                .padding(horizontal = 16.dp)
-                .pointerInput(Unit) {
-                    detectDragGestures { change, dragAmount ->
-                        // Adjusting sensitivity: higher number = slower pitch change
-                        vm.adjustPitch(dragAmount.x.toDouble() / 2.0)
-                        change.consume()
-                    }
-                }
+                .fillMaxSize()
+                .safeDrawingPadding()
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
         ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                // 1. Draw the background of the rectangle
-                drawRoundRect(
-                    color = Color.White.copy(alpha = 0.05f),
-                    cornerRadius = CornerRadius(12f, 12f)
-                )
-
-                // 2. Draw the outline (The "Border")
-                drawRoundRect(
-                    color = AccentGold,
-                    style = Stroke(width = 4f),
-                    cornerRadius = CornerRadius(12f, 12f)
-                )
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                PanelButton("Tune", panel == Panel.TUNE, Modifier.weight(1f)) { panel = Panel.TUNE }
+                PanelButton("Guess", panel == Panel.GUESS, Modifier.weight(1f)) { panel = Panel.GUESS }
             }
 
-            // 3. Optional: Add a visual "Center Line"
-            // This helps the user see where the "neutral" point is
-            /*
-            Divider(
-                color = AccentGold.copy(alpha = 0.3f),
-                modifier = Modifier.fillMaxHeight().width(1.dp)
-            )
-            */
+            Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                "SLIDE LEFT OR RIGHT TO ADJUST PITCH",
-                color = AccentGold.copy(alpha = 0.6f),
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
-            )
+            when (panel) {
+                Panel.TUNE -> {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Difficulty.entries.forEach { d ->
+                            ModeButton(d.label, tuneVm.difficulty == d, Modifier.weight(1f)) { tuneVm.selectDifficulty(d) }
+                        }
+                    }
+                }
+                Panel.GUESS -> {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        ModeButton("Normal", !guessVm.isEasyMode, Modifier.weight(1f)) {
+                            if (guessVm.isEasyMode) guessVm.toggleEasyMode()
+                        }
+                        ModeButton("Easy", guessVm.isEasyMode, Modifier.weight(1f)) {
+                            if (!guessVm.isEasyMode) guessVm.toggleEasyMode()
+                        }
+                    }
+                }
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = { showAnalytics = true }) {
+                    BarChartIcon(tint = Color.White, modifier = Modifier.size(22.dp))
+                }
+                IconButton(onClick = { showSettings = true }) {
+                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+                }
+            }
+
+            Box(modifier = Modifier.weight(1f)) {
+                when (panel) {
+                    Panel.TUNE -> TuneScreen(tuneVm)
+                    Panel.GUESS -> GuessScreen(guessVm)
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(60.dp))
-
-        // Submit Button with Dark Theme Styling
-        Button(
-            onClick = { vm.submit() },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = SurfaceGray,
-                contentColor = AccentGold
-            ),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Text("SUBMIT PITCH", fontWeight = FontWeight.Bold)
-        }
         if (showSettings) {
-            ModalBottomSheet(
-                onDismissRequest = { showSettings = false },
-                sheetState = sheetState,
-                containerColor = Color(0xFF1E1E1E)
-            ) {
-                Column(modifier = Modifier.fillMaxHeight(0.8f).padding(16.dp)) {
-                    Text("Practice Settings", fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.Bold)
-
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        Button(onClick = { vm.selectAll() }) { Text("Select All") }
-                        vm.octaves.forEach { o ->
-                            // Check if the octave is currently "Active"
-                            val isActive = vm.enabledNotes.any { it.endsWith(o.toString()) }
-
-                            Button(
-                                onClick = { vm.selectOctave(o) },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isActive) AccentGold else SurfaceGray,
-                                    contentColor = if (isActive) DarkGray else Color.White
-                                )
-                            ) {
-                                Text("Oct $o")
-                            }
-                        }
-                    }
-
-                    LazyVerticalGrid(columns = GridCells.Fixed(3), modifier = Modifier.weight(1f)) {
-                        // We check octaves 3, 4, 5, and 6 for the checkboxes
-                        val displayOctaves = listOf(3, 4, 5, 6)
-
-                        items(vm.allNotes.size * displayOctaves.size) { index ->
-                            val n = vm.allNotes[index % 12]
-                            val o = displayOctaves[index / 12]
-                            val noteKey = "$n$o"
-
-                            // ONLY show the checkbox if it's within your G3-G#6 range
-                            if (vm.isWithinRange(n, o)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Checkbox(
-                                        checked = vm.enabledNotes.contains(noteKey),
-                                        onCheckedChange = { vm.toggleNote(noteKey) }
-                                    )
-                                    Text(noteKey, color = Color.White)
-                                }
-                            }
-                        }
-                    }
-                }
+            when (panel) {
+                Panel.TUNE -> SettingsSheet(
+                    title = "Tune Settings",
+                    active = tuneVm.settings,
+                    onToggleCell = tuneVm::toggleCell,
+                    onToggleRow = tuneVm::toggleRow,
+                    onToggleColumn = tuneVm::toggleColumn,
+                    onReset = tuneVm::resetSettings,
+                    onDismiss = { showSettings = false },
+                    sheetState = settingsSheetState,
+                    context = context,
+                )
+                Panel.GUESS -> SettingsSheet(
+                    title = "Guess Settings",
+                    active = guessVm.settings,
+                    onToggleCell = guessVm::toggleCell,
+                    onToggleRow = guessVm::toggleRow,
+                    onToggleColumn = guessVm::toggleColumn,
+                    onReset = guessVm::resetSettings,
+                    onDismiss = { showSettings = false },
+                    sheetState = settingsSheetState,
+                    context = context,
+                )
             }
         }
+
+        if (showAnalytics) {
+            when (panel) {
+                Panel.TUNE -> TuneAnalyticsSheet(
+                    context = context,
+                    onDismiss = { showAnalytics = false },
+                    sheetState = analyticsSheetState,
+                )
+                Panel.GUESS -> GuessAnalyticsSheet(
+                    context = context,
+                    onDismiss = { showAnalytics = false },
+                    sheetState = analyticsSheetState,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun PanelButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (selected) AccentGold else SurfaceGray,
+            contentColor = if (selected) DarkGray else Color.White,
+        ),
+    ) {
+        Text(label, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun ModeButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        modifier = modifier,
+        colors = ButtonDefaults.outlinedButtonColors(
+            containerColor = if (selected) AccentGold.copy(alpha = 0.15f) else Color.Transparent,
+            contentColor = if (selected) AccentGold else Color.LightGray,
+        ),
+    ) {
+        Text(label, fontSize = 13.sp)
     }
 }

@@ -1,0 +1,143 @@
+package com.example.pitchtrainer
+
+import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.AndroidViewModel
+import kotlin.math.log2
+import kotlin.math.pow
+import kotlin.math.roundToInt
+
+enum class Difficulty(val label: String, val startStepCents: Int, val maxStartSteps: Int, val moveStepCents: Int) {
+    EASY("Easy", 30, 5, 30),
+    MEDIUM("Medium", 20, 5, 20),
+    HARD("Hard", 10, 10, 10),
+}
+
+class TuneViewModel(app: Application) : AndroidViewModel(app) {
+    private val engine = PitchEngine()
+    private var engineStarted = false
+
+    val settings = mutableStateListOf<Boolean>()
+
+    var difficulty by mutableStateOf(Difficulty.HARD)
+        private set
+    var targetToneIndex by mutableStateOf(TONES.indexOf("A"))
+        private set
+    var targetOctave by mutableStateOf(4)
+        private set
+    var targetFreq by mutableStateOf(440.0)
+        private set
+    var userFreq by mutableStateOf(440.0)
+        private set
+    var feedback by mutableStateOf("Adjust the pitch")
+        private set
+    var isComplete by mutableStateOf(false)
+        private set
+
+    val targetNoteName: String get() = noteLabel(targetToneIndex, targetOctave)
+
+    init {
+        settings.addAll(SettingsStore.load(app, PREF_KEY_TUNE_SETTINGS).toList())
+        val storedDifficulty = SettingsStore.getString(app, PREF_KEY_TUNE_DIFFICULTY, Difficulty.HARD.name)
+        difficulty = Difficulty.entries.find { it.name == storedDifficulty } ?: Difficulty.HARD
+        generateNewTask()
+    }
+
+    fun onVisible() {
+        if (!engineStarted) {
+            engine.start()
+            engineStarted = true
+        }
+        engine.updateFrequency(userFreq)
+    }
+
+    fun onHidden() {
+        engine.stop()
+        engineStarted = false
+    }
+
+    override fun onCleared() {
+        engine.stop()
+    }
+
+    fun selectDifficulty(d: Difficulty) {
+        if (d == difficulty) return
+        difficulty = d
+        SettingsStore.putString(getApplication(), PREF_KEY_TUNE_DIFFICULTY, d.name)
+        // The in-progress offset was generated for the old step size and may no longer be
+        // reachable (e.g. 80c isn't a multiple of a 30c step), so start a fresh round. Since
+        // the abandoned round was never submitted, it was never recorded to stats either.
+        generateNewTask()
+    }
+
+    fun generateNewTask() {
+        isComplete = false
+        feedback = "Adjust the pitch"
+
+        val activeSlots = settings.indices.filter { settings[it] }
+        val slot = if (activeSlots.isNotEmpty()) activeSlots.random() else noteSlot(TONES.indexOf("A"), 4)
+        targetToneIndex = toneIndexOf(slot)
+        targetOctave = octaveOf(slot)
+        targetFreq = frequencyOf(slot)
+
+        val steps = (1..difficulty.maxStartSteps).random()
+        val sign = if (listOf(true, false).random()) 1 else -1
+        val offsetCents = steps * difficulty.startStepCents * sign
+        userFreq = targetFreq * 2.0.pow(offsetCents / 1200.0)
+        engine.updateFrequency(userFreq)
+    }
+
+    fun adjustPitch(direction: Int) {
+        if (isComplete) return
+        userFreq *= 2.0.pow((direction * difficulty.moveStepCents) / 1200.0)
+        engine.updateFrequency(userFreq)
+    }
+
+    fun submit() {
+        isComplete = true
+        engine.updateFrequency(targetFreq)
+
+        val diffCents = (1200 * log2(userFreq / targetFreq)).roundToInt()
+        feedback = when {
+            diffCents == 0 -> "Perfect Match!"
+            kotlin.math.abs(diffCents) == difficulty.moveStepCents -> "Close!"
+            else -> "You were off by $diffCents cents"
+        }
+        StatsStore.recordTune(getApplication(), targetToneIndex, targetOctave, diffCents)
+    }
+
+    fun nextNote() = generateNewTask()
+
+    fun toggleCell(toneIndex: Int, octave: Int) {
+        val slot = noteSlot(toneIndex, octave)
+        settings[slot] = !settings[slot]
+        persistSettings()
+    }
+
+    fun toggleRow(toneIndex: Int) {
+        val slots = OCTAVE_RANGE.map { noteSlot(toneIndex, it) }
+        val allOn = slots.all { settings[it] }
+        slots.forEach { settings[it] = !allOn }
+        persistSettings()
+    }
+
+    fun toggleColumn(octave: Int) {
+        val slots = TONES.indices.map { noteSlot(it, octave) }
+        val allOn = slots.all { settings[it] }
+        slots.forEach { settings[it] = !allOn }
+        persistSettings()
+    }
+
+    fun resetSettings() {
+        val defaults = SettingsStore.defaultSettings()
+        for (i in settings.indices) settings[i] = defaults[i]
+        persistSettings()
+    }
+
+    private fun persistSettings() {
+        SettingsStore.save(getApplication(), PREF_KEY_TUNE_SETTINGS, settings.toBooleanArray())
+    }
+}
