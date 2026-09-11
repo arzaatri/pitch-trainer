@@ -1,4 +1,4 @@
-package com.example.pitchtrainer
+package com.example.tonetrainer
 
 import androidx.compose.ui.graphics.Color
 

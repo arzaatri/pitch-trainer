@@ -1,4 +1,4 @@
-package com.example.pitchtrainer
+package com.example.tonetrainer
 
 import kotlin.math.pow
 
@@ -40,7 +40,13 @@ fun frequencyOf(slot: Int): Double = frequencyOf(toneIndexOf(slot), octaveOf(slo
 fun noteLabel(toneIndex: Int, octave: Int): String = "${displayName(TONES[toneIndex])}$octave"
 
 /** F5 and everything above it is high-pitched enough to be unpleasant to listen to. */
-fun isCautionNote(toneIndex: Int, octave: Int): Boolean =
+fun isHighCautionNote(toneIndex: Int, octave: Int): Boolean =
     octave > 5 || (octave == 5 && toneIndex >= TONES.indexOf("F"))
 
-fun isCautionSlot(slot: Int): Boolean = isCautionNote(toneIndexOf(slot), octaveOf(slot))
+fun isHighCautionSlot(slot: Int): Boolean = isHighCautionNote(toneIndexOf(slot), octaveOf(slot))
+
+/** Below G3 can be difficult to hear clearly on some device speakers. */
+fun isLowCautionNote(toneIndex: Int, octave: Int): Boolean =
+    octave < 3 || (octave == 3 && toneIndex < TONES.indexOf("G"))
+
+fun isLowCautionSlot(slot: Int): Boolean = isLowCautionNote(toneIndexOf(slot), octaveOf(slot))

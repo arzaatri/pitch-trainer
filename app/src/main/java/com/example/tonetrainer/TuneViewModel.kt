@@ -1,4 +1,4 @@
-package com.example.pitchtrainer
+package com.example.tonetrainer
 
 import android.app.Application
 import androidx.compose.runtime.getValue
@@ -18,9 +18,13 @@ enum class Difficulty(val label: String, val startStepCents: Int, val maxStartSt
 
 class TuneViewModel(app: Application) : AndroidViewModel(app) {
     private val engine = PitchEngine()
-    private var engineStarted = false
+    private var isPanelVisible = false
+    private var isAppInForeground = true
 
     val settings = mutableStateListOf<Boolean>()
+
+    var isPaused by mutableStateOf(false)
+        private set
 
     var difficulty by mutableStateOf(Difficulty.HARD)
         private set
@@ -36,6 +40,8 @@ class TuneViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var isComplete by mutableStateOf(false)
         private set
+    var isShowingCorrectTone by mutableStateOf(true)
+        private set
 
     val targetNoteName: String get() = noteLabel(targetToneIndex, targetOctave)
 
@@ -47,20 +53,39 @@ class TuneViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun onVisible() {
-        if (!engineStarted) {
-            engine.start()
-            engineStarted = true
-        }
-        engine.updateFrequency(userFreq)
+        isPanelVisible = true
+        refreshAudio()
+        engine.updateFrequency(if (isComplete && isShowingCorrectTone) targetFreq else userFreq)
     }
 
     fun onHidden() {
-        engine.stop()
-        engineStarted = false
+        isPanelVisible = false
+        refreshAudio()
     }
 
+    fun onAppForeground() {
+        isAppInForeground = true
+        refreshAudio()
+    }
+
+    fun onAppBackground() {
+        isAppInForeground = false
+        refreshAudio()
+    }
+
+    fun togglePause() {
+        isPaused = !isPaused
+        refreshAudio()
+    }
+
+    private fun refreshAudio() {
+        if (isPanelVisible && isAppInForeground && !isPaused) engine.start() else engine.stop()
+    }
+
+    fun isAudible(): Boolean = engine.isAudible()
+
     override fun onCleared() {
-        engine.stop()
+        engine.release()
     }
 
     fun selectDifficulty(d: Difficulty) {
@@ -76,6 +101,7 @@ class TuneViewModel(app: Application) : AndroidViewModel(app) {
     fun generateNewTask() {
         isComplete = false
         feedback = "Adjust the pitch"
+        isShowingCorrectTone = true
 
         val activeSlots = settings.indices.filter { settings[it] }
         val slot = if (activeSlots.isNotEmpty()) activeSlots.random() else noteSlot(TONES.indexOf("A"), 4)
@@ -96,6 +122,13 @@ class TuneViewModel(app: Application) : AndroidViewModel(app) {
         engine.updateFrequency(userFreq)
     }
 
+    /** Post-submission only: switches the playing reference tone between the correct note and
+     * the note the user actually tuned to. */
+    fun toggleCorrectTone() {
+        isShowingCorrectTone = !isShowingCorrectTone
+        engine.updateFrequency(if (isShowingCorrectTone) targetFreq else userFreq)
+    }
+
     fun submit() {
         isComplete = true
         engine.updateFrequency(targetFreq)
@@ -103,7 +136,7 @@ class TuneViewModel(app: Application) : AndroidViewModel(app) {
         val diffCents = (1200 * log2(userFreq / targetFreq)).roundToInt()
         feedback = when {
             diffCents == 0 -> "Perfect Match!"
-            kotlin.math.abs(diffCents) == difficulty.moveStepCents -> "Close!"
+            kotlin.math.abs(diffCents) == difficulty.moveStepCents -> "Close! You were off by $diffCents cents"
             else -> "You were off by $diffCents cents"
         }
         StatsStore.recordTune(getApplication(), targetToneIndex, targetOctave, diffCents)

@@ -1,4 +1,4 @@
-package com.example.pitchtrainer
+package com.example.tonetrainer
 
 import android.content.Context
 
@@ -8,7 +8,8 @@ private const val BYTES_NEEDED = (TOTAL_NOTES + 7) / 8 // 14 bytes for 108 bits
 const val PREF_KEY_TUNE_SETTINGS = "tune_settings"
 const val PREF_KEY_GUESS_SETTINGS = "guess_settings"
 const val PREF_KEY_TUNE_DIFFICULTY = "tune_difficulty"
-private const val PREF_KEY_OCTAVE6_WARNING_DISMISSED = "octave6_warning_dismissed"
+private const val PREF_KEY_HIGH_PITCH_WARNING_DISMISSED = "high_pitch_warning_dismissed"
+private const val PREF_KEY_LOW_PITCH_WARNING_DISMISSED = "low_pitch_warning_dismissed"
 
 /**
  * Persists the 48-slot (12 tones x 4 octaves) active-note set as a packed bitset,
@@ -16,10 +17,9 @@ private const val PREF_KEY_OCTAVE6_WARNING_DISMISSED = "octave6_warning_dismisse
  */
 object SettingsStore {
 
-    /** Defaults to A3-E5 inclusive, the comfortable middle of the range. */
+    /** Defaults to the comfortable middle of the range: G3-E5 inclusive. */
     fun defaultSettings(): BooleanArray = BooleanArray(TOTAL_NOTES) { slot ->
-        val octave = octaveOf(slot)
-        octave in 3..4 || (octave == 5 && toneIndexOf(slot) <= TONES.indexOf("E"))
+        !isHighCautionSlot(slot) && !isLowCautionSlot(slot)
     }
 
     fun easyPresetOctave4(): BooleanArray = BooleanArray(TOTAL_NOTES) { slot -> octaveOf(slot) == 4 }
@@ -30,14 +30,24 @@ object SettingsStore {
         return decode(hex)
     }
 
-    fun isOctave6WarningDismissed(context: Context): Boolean {
+    fun isHighPitchWarningDismissed(context: Context): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getBoolean(PREF_KEY_OCTAVE6_WARNING_DISMISSED, false)
+        return prefs.getBoolean(PREF_KEY_HIGH_PITCH_WARNING_DISMISSED, false)
     }
 
-    fun setOctave6WarningDismissed(context: Context, dismissed: Boolean) {
+    fun setHighPitchWarningDismissed(context: Context, dismissed: Boolean) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        prefs.edit().putBoolean(PREF_KEY_OCTAVE6_WARNING_DISMISSED, dismissed).apply()
+        prefs.edit().putBoolean(PREF_KEY_HIGH_PITCH_WARNING_DISMISSED, dismissed).apply()
+    }
+
+    fun isLowPitchWarningDismissed(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(PREF_KEY_LOW_PITCH_WARNING_DISMISSED, false)
+    }
+
+    fun setLowPitchWarningDismissed(context: Context, dismissed: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(PREF_KEY_LOW_PITCH_WARNING_DISMISSED, dismissed).apply()
     }
 
     fun save(context: Context, key: String, active: BooleanArray) {

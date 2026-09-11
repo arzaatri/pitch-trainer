@@ -1,4 +1,4 @@
-package com.example.pitchtrainer
+package com.example.tonetrainer
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable

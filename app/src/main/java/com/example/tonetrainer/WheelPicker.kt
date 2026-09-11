@@ -1,4 +1,4 @@
-package com.example.pitchtrainer
+package com.example.tonetrainer
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -30,7 +30,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 private val WheelItemHeight = 44.dp
-private const val WHEEL_VISIBLE_ROWS = 5 // must be odd; middle row is the selection
+private const val WHEEL_VISIBLE_ROWS = 5 // default must be odd; middle row is the selection
 
 /**
  * A snapping "wheel" list: drag/fling to scroll, the centered row is the current selection.
@@ -45,10 +45,11 @@ fun WheelPicker(
     accentColor: Color,
     modifier: Modifier = Modifier,
     scrollEnabled: Boolean = true,
+    visibleRows: Int = WHEEL_VISIBLE_ROWS, // must be odd; middle row is the selection
 ) {
     val density = LocalDensity.current
     val itemHeightPx = with(density) { WheelItemHeight.toPx() }
-    val sidePadding = WheelItemHeight * (WHEEL_VISIBLE_ROWS / 2)
+    val sidePadding = WheelItemHeight * (visibleRows / 2)
     val scope = rememberCoroutineScope()
 
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = selectedIndex.coerceIn(items.indices))
@@ -86,7 +87,7 @@ fun WheelPicker(
 
     Box(
         modifier = modifier
-            .height(WheelItemHeight * WHEEL_VISIBLE_ROWS)
+            .height(WheelItemHeight * visibleRows)
             .alpha(if (scrollEnabled) 1f else 0.5f),
         contentAlignment = Alignment.Center,
     ) {

@@ -1,4 +1,4 @@
-package com.example.pitchtrainer
+package com.example.tonetrainer
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -34,16 +34,28 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 
 enum class Panel { TUNE, GUESS }
+
+/** Polls isAudible() instead of waiting a fixed guessed duration, since how long hardware
+ * playback actually lags behind what's been written varies by device/audio route. */
+private suspend fun waitUntilSilent(isAudible: () -> Boolean) {
+    val deadline = System.currentTimeMillis() + PitchEngine.MAX_CROSSFADE_WAIT_MS
+    while (isAudible() && System.currentTimeMillis() < deadline) delay(5)
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -70,7 +82,11 @@ fun PitchApp(
     tuneVm: TuneViewModel = viewModel(),
     guessVm: GuessViewModel = viewModel(),
 ) {
-    var panel by remember { mutableStateOf(Panel.TUNE) }
+    // rememberSaveable (not remember) so an orientation change - which recreates the Activity -
+    // doesn't silently snap the user back to Tune. The ViewModels themselves already survive
+    // recreation (retained via the Activity's ViewModelStore), so difficulty/note/settings/guess
+    // state comes back for free; only this plain UI-local selection needed saving explicitly.
+    var panel by rememberSaveable { mutableStateOf(Panel.TUNE) }
     var showSettings by remember { mutableStateOf(false) }
     var showAnalytics by remember { mutableStateOf(false) }
     val settingsSheetState = rememberModalBottomSheetState()
@@ -78,13 +94,18 @@ fun PitchApp(
     val context = LocalContext.current
 
     LaunchedEffect(panel) {
+        // Fade the outgoing panel's tone all the way out - and wait for the hardware to actually
+        // finish playing it, not just for the software fade to finish - before the incoming one
+        // starts ramping up, so the two AudioTracks are never audible at once.
         when (panel) {
             Panel.TUNE -> {
                 guessVm.onHidden()
+                waitUntilSilent(guessVm::isAudible)
                 tuneVm.onVisible()
             }
             Panel.GUESS -> {
                 tuneVm.onHidden()
+                waitUntilSilent(tuneVm::isAudible)
                 guessVm.onVisible()
             }
         }
@@ -95,6 +116,28 @@ fun PitchApp(
             tuneVm.onHidden()
             guessVm.onHidden()
         }
+    }
+
+    // ON_STOP fires when the app is backgrounded (Home button, app switch) without necessarily
+    // destroying the composition, so the DisposableEffect above wouldn't otherwise catch it and
+    // the tone would keep playing behind the user's back.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    tuneVm.onAppBackground()
+                    guessVm.onAppBackground()
+                }
+                Lifecycle.Event.ON_START -> {
+                    tuneVm.onAppForeground()
+                    guessVm.onAppForeground()
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(DarkGray)) {
