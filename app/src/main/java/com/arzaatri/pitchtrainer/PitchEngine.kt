@@ -1,4 +1,4 @@
-package com.example.tonetrainer
+package com.arzaatri.pitchtrainer
 
 import android.media.AudioAttributes
 import android.media.AudioFormat

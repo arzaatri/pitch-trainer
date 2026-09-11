@@ -1,4 +1,4 @@
-package com.example.tonetrainer
+package com.arzaatri.pitchtrainer
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.size

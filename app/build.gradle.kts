@@ -16,13 +16,13 @@ val keystoreProperties = Properties().apply {
 }
 
 android {
-    namespace = "com.example.tonetrainer"
+    namespace = "com.arzaatri.pitchtrainer"
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId = "com.arzaatri.tonetrainer"
+        applicationId = "com.arzaatri.pitchtrainer"
         minSdk = 24
         targetSdk = 36
         versionCode = 1

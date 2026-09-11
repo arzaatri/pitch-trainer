@@ -1,4 +1,4 @@
-package com.example.tonetrainer
+package com.arzaatri.pitchtrainer
 
 import android.app.Application
 import androidx.compose.runtime.getValue
@@ -6,11 +6,17 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
-import kotlin.math.abs
+import kotlin.math.log2
+import kotlin.math.pow
+import kotlin.math.roundToInt
 
-enum class GuessFeedback { NONE, CORRECT, CLOSE, WRONG }
+enum class Difficulty(val label: String, val startStepCents: Int, val maxStartSteps: Int, val moveStepCents: Int) {
+    EASY("Easy", 30, 5, 30),
+    MEDIUM("Medium", 20, 5, 20),
+    HARD("Hard", 10, 10, 10),
+}
 
-class GuessViewModel(app: Application) : AndroidViewModel(app) {
+class TuneViewModel(app: Application) : AndroidViewModel(app) {
     private val engine = PitchEngine()
     private var isPanelVisible = false
     private var isAppInForeground = true
@@ -20,39 +26,36 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
     var isPaused by mutableStateOf(false)
         private set
 
+    var difficulty by mutableStateOf(Difficulty.HARD)
+        private set
     var targetToneIndex by mutableStateOf(TONES.indexOf("A"))
         private set
     var targetOctave by mutableStateOf(4)
         private set
     var targetFreq by mutableStateOf(440.0)
         private set
-
-    var guessToneIndex by mutableStateOf(TONES.indexOf("C"))
-    var guessOctave by mutableStateOf(4)
-
+    var userFreq by mutableStateOf(440.0)
+        private set
+    var feedback by mutableStateOf("Adjust the pitch")
+        private set
     var isComplete by mutableStateOf(false)
-        private set
-    var feedback by mutableStateOf(GuessFeedback.NONE)
-        private set
-    var guessedFreq by mutableStateOf(440.0)
         private set
     var isShowingCorrectTone by mutableStateOf(true)
         private set
 
     val targetNoteName: String get() = noteLabel(targetToneIndex, targetOctave)
 
-    val isEasyMode: Boolean
-        get() = settings.toBooleanArray().contentEquals(SettingsStore.easyPresetOctave4())
-
     init {
-        settings.addAll(SettingsStore.load(app, PREF_KEY_GUESS_SETTINGS).toList())
+        settings.addAll(SettingsStore.load(app, PREF_KEY_TUNE_SETTINGS).toList())
+        val storedDifficulty = SettingsStore.getString(app, PREF_KEY_TUNE_DIFFICULTY, Difficulty.HARD.name)
+        difficulty = Difficulty.entries.find { it.name == storedDifficulty } ?: Difficulty.HARD
         generateNewTask()
     }
 
     fun onVisible() {
         isPanelVisible = true
         refreshAudio()
-        engine.updateFrequency(if (isComplete && !isShowingCorrectTone) guessedFreq else targetFreq)
+        engine.updateFrequency(if (isComplete && isShowingCorrectTone) targetFreq else userFreq)
     }
 
     fun onHidden() {
@@ -85,9 +88,19 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
         engine.release()
     }
 
+    fun selectDifficulty(d: Difficulty) {
+        if (d == difficulty) return
+        difficulty = d
+        SettingsStore.putString(getApplication(), PREF_KEY_TUNE_DIFFICULTY, d.name)
+        // The in-progress offset was generated for the old step size and may no longer be
+        // reachable (e.g. 80c isn't a multiple of a 30c step), so start a fresh round. Since
+        // the abandoned round was never submitted, it was never recorded to stats either.
+        generateNewTask()
+    }
+
     fun generateNewTask() {
         isComplete = false
-        feedback = GuessFeedback.NONE
+        feedback = "Adjust the pitch"
         isShowingCorrectTone = true
 
         val activeSlots = settings.indices.filter { settings[it] }
@@ -95,43 +108,38 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
         targetToneIndex = toneIndexOf(slot)
         targetOctave = octaveOf(slot)
         targetFreq = frequencyOf(slot)
-        // Easy mode only has one possible octave, so the locked wheel should already show it.
-        if (isEasyMode) guessOctave = targetOctave
-        engine.updateFrequency(targetFreq)
+
+        val steps = (1..difficulty.maxStartSteps).random()
+        val sign = if (listOf(true, false).random()) 1 else -1
+        val offsetCents = steps * difficulty.startStepCents * sign
+        userFreq = targetFreq * 2.0.pow(offsetCents / 1200.0)
+        engine.updateFrequency(userFreq)
     }
 
-    fun selectGuessTone(toneIndex: Int) {
-        guessToneIndex = toneIndex
+    fun adjustPitch(direction: Int) {
+        if (isComplete) return
+        userFreq *= 2.0.pow((direction * difficulty.moveStepCents) / 1200.0)
+        engine.updateFrequency(userFreq)
     }
 
-    fun selectGuessOctave(octave: Int) {
-        guessOctave = octave
+    /** Post-submission only: switches the playing reference tone between the correct note and
+     * the note the user actually tuned to. */
+    fun toggleCorrectTone() {
+        isShowingCorrectTone = !isShowingCorrectTone
+        engine.updateFrequency(if (isShowingCorrectTone) targetFreq else userFreq)
     }
 
     fun submit() {
         isComplete = true
-        guessedFreq = frequencyOf(noteSlot(guessToneIndex, guessOctave))
-        isShowingCorrectTone = true
-        val distance = abs(noteSlot(targetToneIndex, targetOctave) - noteSlot(guessToneIndex, guessOctave))
-        feedback = when (distance) {
-            0 -> GuessFeedback.CORRECT
-            1 -> GuessFeedback.CLOSE
-            else -> GuessFeedback.WRONG
-        }
-        val outcome = when (feedback) {
-            GuessFeedback.CORRECT -> GuessOutcome.CORRECT
-            GuessFeedback.CLOSE -> GuessOutcome.CLOSE
-            else -> GuessOutcome.WRONG
-        }
-        StatsStore.recordGuess(getApplication(), targetToneIndex, targetOctave, outcome)
         engine.updateFrequency(targetFreq)
-    }
 
-    /** Post-submission only: switches the playing reference tone between the correct note and
-     * the note the user guessed. */
-    fun toggleCorrectTone() {
-        isShowingCorrectTone = !isShowingCorrectTone
-        engine.updateFrequency(if (isShowingCorrectTone) targetFreq else guessedFreq)
+        val diffCents = (1200 * log2(userFreq / targetFreq)).roundToInt()
+        feedback = when {
+            diffCents == 0 -> "Perfect Match!"
+            kotlin.math.abs(diffCents) == difficulty.moveStepCents -> "Close! You were off by $diffCents cents"
+            else -> "You were off by $diffCents cents"
+        }
+        StatsStore.recordTune(getApplication(), targetToneIndex, targetOctave, diffCents)
     }
 
     fun nextNote() = generateNewTask()
@@ -162,17 +170,7 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
         persistSettings()
     }
 
-    fun toggleEasyMode() {
-        val newSettings = if (isEasyMode) SettingsStore.defaultSettings() else SettingsStore.easyPresetOctave4()
-        for (i in settings.indices) settings[i] = newSettings[i]
-        persistSettings()
-        // The in-progress target may no longer be reachable under the new settings (e.g. Easy
-        // only allows octave 4), so start a fresh round. The abandoned round was never
-        // submitted, so it was never recorded to stats either.
-        generateNewTask()
-    }
-
     private fun persistSettings() {
-        SettingsStore.save(getApplication(), PREF_KEY_GUESS_SETTINGS, settings.toBooleanArray())
+        SettingsStore.save(getApplication(), PREF_KEY_TUNE_SETTINGS, settings.toBooleanArray())
     }
 }

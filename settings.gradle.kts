@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "toneTrainer"
+rootProject.name = "pitchTrainer"
 include(":app")

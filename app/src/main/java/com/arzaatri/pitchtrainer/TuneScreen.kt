@@ -1,4 +1,4 @@
-package com.example.tonetrainer
+package com.arzaatri.pitchtrainer
 
 import android.content.res.Configuration
 import androidx.compose.foundation.BorderStroke

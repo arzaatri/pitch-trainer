@@ -1,4 +1,4 @@
-package com.example.tonetrainer
+package com.arzaatri.pitchtrainer
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
