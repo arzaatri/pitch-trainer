@@ -192,6 +192,12 @@ fun PitchApp(
         }
 
         if (showSettings) {
+            // Instrument is a single shared preference (not per Tune/Guess panel), so both
+            // ViewModels' engines are updated together regardless of which sheet is open.
+            val onSelectInstrument: (Instrument) -> Unit = {
+                tuneVm.selectInstrument(it)
+                guessVm.selectInstrument(it)
+            }
             when (panel) {
                 Panel.TUNE -> SettingsSheet(
                     title = "Tune Settings",
@@ -203,6 +209,8 @@ fun PitchApp(
                     onDismiss = { showSettings = false },
                     sheetState = settingsSheetState,
                     context = context,
+                    instrument = tuneVm.instrument,
+                    onSelectInstrument = onSelectInstrument,
                 )
                 Panel.GUESS -> SettingsSheet(
                     title = "Guess Settings",
@@ -214,6 +222,8 @@ fun PitchApp(
                     onDismiss = { showSettings = false },
                     sheetState = settingsSheetState,
                     context = context,
+                    instrument = guessVm.instrument,
+                    onSelectInstrument = onSelectInstrument,
                 )
             }
         }

@@ -6,6 +6,9 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlin.math.log2
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -45,11 +48,33 @@ class TuneViewModel(app: Application) : AndroidViewModel(app) {
 
     val targetNoteName: String get() = noteLabel(targetToneIndex, targetOctave)
 
+    var instrument by mutableStateOf(Instrument.SINE)
+        private set
+
     init {
         settings.addAll(SettingsStore.load(app, PREF_KEY_TUNE_SETTINGS).toList())
         val storedDifficulty = SettingsStore.getString(app, PREF_KEY_TUNE_DIFFICULTY, Difficulty.HARD.name)
         difficulty = Difficulty.entries.find { it.name == storedDifficulty } ?: Difficulty.HARD
+        val storedInstrument = SettingsStore.getString(app, PREF_KEY_INSTRUMENT, Instrument.SINE.name)
+        instrument = Instrument.entries.find { it.name == storedInstrument } ?: Instrument.SINE
+        if (instrument != Instrument.SINE) loadInstrument(instrument)
         generateNewTask()
+    }
+
+    fun selectInstrument(newInstrument: Instrument) {
+        if (newInstrument == instrument) return
+        instrument = newInstrument
+        SettingsStore.putString(getApplication(), PREF_KEY_INSTRUMENT, newInstrument.name)
+        loadInstrument(newInstrument)
+    }
+
+    /** Parsing the soundfont asset is only needed off the Sine default, and takes a few hundred
+     * ms, so it's kept off the main thread rather than blocking init/setInstrument. */
+    private fun loadInstrument(instrument: Instrument) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            engine.setInstrument(SoundFontBank.zonesFor(app, instrument))
+        }
     }
 
     fun onVisible() {

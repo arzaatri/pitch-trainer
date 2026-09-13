@@ -6,6 +6,9 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 enum class GuessFeedback { NONE, CORRECT, CLOSE, WRONG }
@@ -41,12 +44,43 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
 
     val targetNoteName: String get() = noteLabel(targetToneIndex, targetOctave)
 
-    val isEasyMode: Boolean
-        get() = settings.toBooleanArray().contentEquals(SettingsStore.easyPresetOctave4())
+    var isEasyMode by mutableStateOf(false)
+        private set
+
+    /** Easy mode's letter wheel is restricted to whichever half of the chromatic scale
+     * (relative to A) the target tone falls in, so guessing still takes some listening. */
+    val easyToneRange: IntRange
+        get() {
+            val half = TONES.size / 2
+            return if (targetToneIndex < half) 0 until half else half until TONES.size
+        }
+
+    var instrument by mutableStateOf(Instrument.SINE)
+        private set
 
     init {
         settings.addAll(SettingsStore.load(app, PREF_KEY_GUESS_SETTINGS).toList())
+        isEasyMode = SettingsStore.isGuessEasyModeEnabled(app)
+        val storedInstrument = SettingsStore.getString(app, PREF_KEY_INSTRUMENT, Instrument.SINE.name)
+        instrument = Instrument.entries.find { it.name == storedInstrument } ?: Instrument.SINE
+        if (instrument != Instrument.SINE) loadInstrument(instrument)
         generateNewTask()
+    }
+
+    fun selectInstrument(newInstrument: Instrument) {
+        if (newInstrument == instrument) return
+        instrument = newInstrument
+        SettingsStore.putString(getApplication(), PREF_KEY_INSTRUMENT, newInstrument.name)
+        loadInstrument(newInstrument)
+    }
+
+    /** Parsing the soundfont asset is only needed off the Sine default, and takes a few hundred
+     * ms, so it's kept off the main thread rather than blocking init/setInstrument. */
+    private fun loadInstrument(instrument: Instrument) {
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            engine.setInstrument(SoundFontBank.zonesFor(app, instrument))
+        }
     }
 
     fun onVisible() {
@@ -95,9 +129,16 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
         targetToneIndex = toneIndexOf(slot)
         targetOctave = octaveOf(slot)
         targetFreq = frequencyOf(slot)
-        // Easy mode only has one possible octave, so the locked wheel should already show it.
-        if (isEasyMode) guessOctave = targetOctave
+        applyEasyModeConstraints()
         engine.updateFrequency(targetFreq)
+    }
+
+    /** In easy mode the octave wheel is locked to the target's octave, and the letter wheel is
+     * limited to whichever half of the chromatic scale the target falls in. */
+    private fun applyEasyModeConstraints() {
+        if (!isEasyMode) return
+        guessOctave = targetOctave
+        if (guessToneIndex !in easyToneRange) guessToneIndex = easyToneRange.first
     }
 
     fun selectGuessTone(toneIndex: Int) {
@@ -163,13 +204,11 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun toggleEasyMode() {
-        val newSettings = if (isEasyMode) SettingsStore.defaultSettings() else SettingsStore.easyPresetOctave4()
-        for (i in settings.indices) settings[i] = newSettings[i]
-        persistSettings()
-        // The in-progress target may no longer be reachable under the new settings (e.g. Easy
-        // only allows octave 4), so start a fresh round. The abandoned round was never
-        // submitted, so it was never recorded to stats either.
-        generateNewTask()
+        isEasyMode = !isEasyMode
+        SettingsStore.setGuessEasyModeEnabled(getApplication(), isEasyMode)
+        // Easy mode doesn't change which notes are reachable, just how the guess wheels behave,
+        // so the in-progress target and its audio stay put; only the wheels need re-clamping.
+        applyEasyModeConstraints()
     }
 
     private fun persistSettings() {

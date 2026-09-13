@@ -8,8 +8,10 @@ private const val BYTES_NEEDED = (TOTAL_NOTES + 7) / 8 // 14 bytes for 108 bits
 const val PREF_KEY_TUNE_SETTINGS = "tune_settings"
 const val PREF_KEY_GUESS_SETTINGS = "guess_settings"
 const val PREF_KEY_TUNE_DIFFICULTY = "tune_difficulty"
+const val PREF_KEY_INSTRUMENT = "instrument"
 private const val PREF_KEY_HIGH_PITCH_WARNING_DISMISSED = "high_pitch_warning_dismissed"
 private const val PREF_KEY_LOW_PITCH_WARNING_DISMISSED = "low_pitch_warning_dismissed"
+private const val PREF_KEY_GUESS_EASY_MODE = "guess_easy_mode"
 
 /**
  * Persists the 48-slot (12 tones x 4 octaves) active-note set as a packed bitset,
@@ -22,7 +24,15 @@ object SettingsStore {
         !isHighCautionSlot(slot) && !isLowCautionSlot(slot)
     }
 
-    fun easyPresetOctave4(): BooleanArray = BooleanArray(TOTAL_NOTES) { slot -> octaveOf(slot) == 4 }
+    fun isGuessEasyModeEnabled(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(PREF_KEY_GUESS_EASY_MODE, false)
+    }
+
+    fun setGuessEasyModeEnabled(context: Context, enabled: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(PREF_KEY_GUESS_EASY_MODE, enabled).apply()
+    }
 
     fun load(context: Context, key: String): BooleanArray {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)

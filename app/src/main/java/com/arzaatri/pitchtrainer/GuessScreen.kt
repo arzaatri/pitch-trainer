@@ -55,6 +55,7 @@ private fun GuessScreenPortrait(vm: GuessViewModel) {
                     onSelectedIndexChange = { vm.selectGuessTone(it) },
                     accentColor = AccentGold,
                     modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    enabledRange = if (vm.isEasyMode) vm.easyToneRange else null,
                 )
                 WheelPicker(
                     items = OCTAVE_LABELS,
@@ -144,6 +145,7 @@ private fun GuessScreenLandscape(vm: GuessViewModel) {
                         onSelectedIndexChange = { vm.selectGuessTone(it) },
                         accentColor = AccentGold,
                         modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
+                        enabledRange = if (vm.isEasyMode) vm.easyToneRange else null,
                         visibleRows = 3,
                     )
                     WheelPicker(

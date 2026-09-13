@@ -145,9 +145,9 @@ private fun Legend(entries: List<Pair<String, Color>>) {
 private fun BreakdownSelector(mode: BreakdownMode, onModeChange: (BreakdownMode) -> Unit) {
     val options = listOf(
         BreakdownMode.OVERALL to "Overall",
-        BreakdownMode.BY_TONE to "By Tone",
+        BreakdownMode.BY_TONE to "By Letter",
         BreakdownMode.BY_OCTAVE to "By Octave",
-        BreakdownMode.BY_TONE_OCTAVE to "By Tone+Octave",
+        BreakdownMode.BY_TONE_OCTAVE to "By Letter+Octave",
     )
     Row(
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),

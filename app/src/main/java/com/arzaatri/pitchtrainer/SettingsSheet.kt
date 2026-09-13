@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
@@ -52,6 +53,8 @@ fun SettingsSheet(
     onDismiss: () -> Unit,
     sheetState: SheetState,
     context: Context,
+    instrument: Instrument,
+    onSelectInstrument: (Instrument) -> Unit,
 ) {
     var highWarningDismissed by remember { mutableStateOf(SettingsStore.isHighPitchWarningDismissed(context)) }
     var lowWarningDismissed by remember { mutableStateOf(SettingsStore.isLowPitchWarningDismissed(context)) }
@@ -89,6 +92,25 @@ fun SettingsSheet(
             ) {
                 Text(title, fontSize = 20.sp, color = Color.White, fontWeight = FontWeight.Bold)
                 Button(onClick = onReset) { Text("Reset") }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Instrument.entries.forEach { inst ->
+                    val selected = inst == instrument
+                    Button(
+                        onClick = { onSelectInstrument(inst) },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selected) AccentGold else DarkGray,
+                            contentColor = if (selected) DarkGray else Color.White,
+                        ),
+                    ) { Text(inst.label) }
+                }
             }
 
             Column(

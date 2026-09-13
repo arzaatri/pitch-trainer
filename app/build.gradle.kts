@@ -66,6 +66,9 @@ android {
     buildFeatures {
         compose = true
     }
+    androidResources {
+        noCompress += "sf2"
+    }
     //composeOptions {
     //    kotlinCompilerExtensionVersion = "1.5.1" // Or a similar version
     //}

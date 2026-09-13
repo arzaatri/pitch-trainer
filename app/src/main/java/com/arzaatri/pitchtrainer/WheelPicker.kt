@@ -45,6 +45,7 @@ fun WheelPicker(
     accentColor: Color,
     modifier: Modifier = Modifier,
     scrollEnabled: Boolean = true,
+    enabledRange: IntRange? = null, // restricts selection to a sub-range; other items are dimmed and unselectable
     visibleRows: Int = WHEEL_VISIBLE_ROWS, // must be odd; middle row is the selection
 ) {
     val density = LocalDensity.current
@@ -73,12 +74,12 @@ fun WheelPicker(
         }
     }
 
-    LaunchedEffect(listState, items) {
+    LaunchedEffect(listState, items, enabledRange) {
         snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
             .collect { scrolling ->
                 if (!scrolling) {
-                    val settled = liveCenterIndex
+                    val settled = enabledRange?.let { liveCenterIndex.coerceIn(it) } ?: liveCenterIndex
                     onSelectedIndexChange(settled)
                     listState.animateScrollToItem(settled, 0)
                 }
@@ -99,12 +100,13 @@ fun WheelPicker(
         ) {
             itemsIndexed(items) { index, label ->
                 val isCentered = index == liveCenterIndex
+                val isInRange = enabledRange?.contains(index) ?: true
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(WheelItemHeight)
                         .then(
-                            if (scrollEnabled) {
+                            if (scrollEnabled && isInRange) {
                                 Modifier.clickable {
                                     scope.launch { listState.animateScrollToItem(index, 0) }
                                     onSelectedIndexChange(index)
@@ -119,7 +121,7 @@ fun WheelPicker(
                         text = label,
                         fontSize = if (isCentered) 22.sp else 16.sp,
                         fontWeight = if (isCentered) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isCentered) accentColor else Color.Gray,
+                        color = if (isCentered) accentColor else if (isInRange) Color.Gray else Color.Gray.copy(alpha = 0.4f),
                     )
                 }
             }

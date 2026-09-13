@@ -5,6 +5,25 @@ import android.media.AudioFormat
 import android.media.AudioTrack
 import kotlin.math.*
 
+/** Nearest zone (by key-range distance) to the target frequency - always returns a zone if the
+ * list is non-empty, even for a frequency that falls outside every zone's key range. */
+internal fun pickZone(zones: List<Sf2Zone>, frequency: Double): Sf2Zone? {
+    if (zones.isEmpty()) return null
+    val key = 69 + 12 * log2(frequency / 440.0)
+    return zones.minByOrNull { z -> abs(key - key.coerceIn(z.keyLo.toDouble(), z.keyHi.toDouble())) }
+}
+
+/** Linear-interpolated read of one sample from a zone's PCM at a fractional frame position,
+ * scaled by the zone's stored gain. Reading past the end (a non-looping zone that's finished)
+ * yields silence rather than garbage. */
+internal fun sampleAt(zone: Sf2Zone, position: Double): Float {
+    val idx = position.toInt()
+    val frac = position - idx
+    val s0 = zone.pcm.getOrElse(idx) { 0 }
+    val s1 = zone.pcm.getOrElse(idx + 1) { s0 }
+    return ((s0 + (s1 - s0) * frac) / 32768.0 * zone.gain).toFloat()
+}
+
 class PitchEngine {
     companion object {
         private const val SAMPLE_RATE = 44100
@@ -23,6 +42,19 @@ class PitchEngine {
     @Volatile private var targetAmplitude = 0.0
     @Volatile private var teardownRequested = false
     private var playerThread: Thread? = null
+
+    // Empty = plain sine (the original behavior). Swapped the same way as frequency - staged as
+    // pending and only adopted once the tone has ducked to silence, so switching instruments
+    // mid-note can't click the same way an instant frequency jump would.
+    @Volatile private var zones: List<Sf2Zone> = emptyList()
+    @Volatile private var pendingZones: List<Sf2Zone>? = null
+    private var currentZone: Sf2Zone? = null
+    private var samplePos = 0.0
+
+    fun setInstrument(newZones: List<Sf2Zone>) {
+        if (newZones == zones) return
+        pendingZones = newZones
+    }
 
     // AudioTrack (MODE_STREAM) buffers several already-written frames ahead of what's actually
     // reaching the speaker, and how far ahead varies by device/audio route - a fixed estimated
@@ -77,24 +109,33 @@ class PitchEngine {
             while (true) {
                 val buffer = FloatArray(512)
                 for (i in buffer.indices) {
-                    val changingFrequency = pendingFrequency != null
-                    val effectiveTarget = if (changingFrequency) 0.0 else targetAmplitude
+                    val changingState = pendingFrequency != null || pendingZones != null
+                    val effectiveTarget = if (changingState) 0.0 else targetAmplitude
                     amplitude = when {
                         amplitude < effectiveTarget -> (amplitude + fadeStep).coerceAtMost(effectiveTarget)
                         amplitude > effectiveTarget -> (amplitude - fadeStep).coerceAtLeast(effectiveTarget)
                         else -> amplitude
                     }
-                    if (changingFrequency && amplitude <= 0.0) {
-                        frequency = pendingFrequency!!
-                        pendingFrequency = null
+                    if (changingState && amplitude <= 0.0) {
+                        pendingFrequency?.let { frequency = it; pendingFrequency = null }
+                        pendingZones?.let { zones = it; pendingZones = null }
+                        currentZone = pickZone(zones, frequency)
+                        samplePos = 0.0
                     }
-                    buffer[i] = (sin(phase) * amplitude).toFloat()
-                    phase += 2.0 * PI * frequency / SAMPLE_RATE
+                    val zone = currentZone
+                    if (zone == null) {
+                        buffer[i] = (sin(phase) * amplitude).toFloat()
+                        phase += 2.0 * PI * frequency / SAMPLE_RATE
+                    } else {
+                        buffer[i] = sampleAt(zone, samplePos) * amplitude.toFloat()
+                        samplePos += (frequency / zone.rootFrequency) * (zone.sampleRate.toDouble() / SAMPLE_RATE)
+                        if (zone.loop && samplePos >= zone.loopEnd) samplePos -= (zone.loopEnd - zone.loopStart)
+                    }
                     framesWritten++
                     if (amplitude > 0.0001) lastAudibleFrame = framesWritten
                 }
                 audioTrack.write(buffer, 0, buffer.size, AudioTrack.WRITE_BLOCKING)
-                if (teardownRequested && pendingFrequency == null && amplitude <= 0.0) break
+                if (teardownRequested && pendingFrequency == null && pendingZones == null && amplitude <= 0.0) break
             }
             audioTrack.stop()
         }.also { it.start() }
