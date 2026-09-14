@@ -23,6 +23,13 @@ class Sf2Zone(
     val loopEnd: Int,
     attenuationCb: Int,
     val pcm: ShortArray,
+    /** Piano samples are a struck, decaying note rather than a bowed/sustained one, so looping
+     * or holding them for as long as the user holds a note sounds wrong - instead the note is
+     * re-struck from the start this often. 0 = never (violin's natural sustain loop is used as-is). */
+    val retriggerSeconds: Double = 0.0,
+    /** Whether this zone is a bowed/sustained instrument it makes sense to wobble the pitch of -
+     * piano can't and doesn't get a vibrato toggle. */
+    val vibratoCapable: Boolean = false,
 ) {
     val rootFrequency = 440.0 * 2.0.pow((rootKey - 69 + pitchCorrectionCents / 100.0) / 12.0)
     val gain = 10.0.pow(-attenuationCb / 200.0)
@@ -35,6 +42,7 @@ object SoundFontBank {
     private const val ASSET_NAME = "GeneralUserGS.sf2"
     private const val GM_PIANO = 0
     private const val GM_VIOLIN = 40
+    private const val PIANO_RETRIGGER_SECONDS = 3.0
 
     private var piano: List<Sf2Zone>? = null
     private var violin: List<Sf2Zone>? = null
@@ -46,8 +54,8 @@ object SoundFontBank {
         if (instrument == Instrument.SINE) return emptyList()
         if (piano == null) {
             val bytes = context.assets.open(ASSET_NAME).use { it.readBytes() }
-            piano = Sf2Parser.extractZones(bytes, GM_PIANO)
-            violin = Sf2Parser.extractZones(bytes, GM_VIOLIN)
+            piano = Sf2Parser.extractZones(bytes, GM_PIANO, retriggerSeconds = PIANO_RETRIGGER_SECONDS)
+            violin = Sf2Parser.extractZones(bytes, GM_VIOLIN, vibratoCapable = true)
         }
         return if (instrument == Instrument.PIANO) piano!! else violin!!
     }
@@ -97,7 +105,7 @@ internal object Sf2Parser {
         return gens
     }
 
-    fun extractZones(bytes: ByteArray, program: Int): List<Sf2Zone> {
+    fun extractZones(bytes: ByteArray, program: Int, retriggerSeconds: Double = 0.0, vibratoCapable: Boolean = false): List<Sf2Zone> {
         val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
         val top = readChunks(buf, 12, bytes.size) // skip "RIFF" + size + "sfbk"
         val sdta = top.first { it.id == "LIST" && listType(buf, it) == "sdta" }
@@ -166,6 +174,8 @@ internal object Sf2Parser {
                 loopEnd = loopEnd - sampleStart,
                 attenuationCb = gens[GEN_ATTENUATION] ?: 0,
                 pcm = pcm,
+                retriggerSeconds = retriggerSeconds,
+                vibratoCapable = vibratoCapable,
             )
         }
         return zones

@@ -55,6 +55,8 @@ fun SettingsSheet(
     context: Context,
     instrument: Instrument,
     onSelectInstrument: (Instrument) -> Unit,
+    isVibratoEnabled: Boolean,
+    onToggleVibrato: () -> Unit,
 ) {
     var highWarningDismissed by remember { mutableStateOf(SettingsStore.isHighPitchWarningDismissed(context)) }
     var lowWarningDismissed by remember { mutableStateOf(SettingsStore.isLowPitchWarningDismissed(context)) }
@@ -110,6 +112,19 @@ fun SettingsSheet(
                             contentColor = if (selected) DarkGray else Color.White,
                         ),
                     ) { Text(inst.label) }
+                }
+            }
+
+            if (instrument == Instrument.VIOLIN) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp)
+                        .clickable { onToggleVibrato() },
+                ) {
+                    Checkbox(checked = isVibratoEnabled, onCheckedChange = { onToggleVibrato() })
+                    Text("Vibrato", color = Color.White)
                 }
             }
 

@@ -24,10 +24,28 @@ internal fun sampleAt(zone: Sf2Zone, position: Double): Float {
     return ((s0 + (s1 - s0) * frac) / 32768.0 * zone.gain).toFloat()
 }
 
+/** Whether a struck/decaying zone (piano) has been sustained long enough to re-strike it. Framed
+ * in real output frames, not the zone's own (pitch-dependent) sample-advance rate, so the note
+ * re-strikes on a wall-clock timer regardless of which pitch it's playing. */
+internal fun shouldRetrigger(zone: Sf2Zone, framesSinceRetrigger: Long, sampleRateOut: Int): Boolean =
+    zone.retriggerSeconds > 0.0 && framesSinceRetrigger >= zone.retriggerSeconds * sampleRateOut
+
+/** Multiplier to apply to a zone's playback rate for a sine-LFO vibrato at the given phase and
+ * depth (in cents) - 1.0 (no change) at phase 0, swinging up to depthCents above/below that. */
+internal fun vibratoMultiplier(phase: Double, depthCents: Double): Double = 2.0.pow(depthCents / 1200.0 * sin(phase))
+
+/** The vibrato multiplier actually applied to a zone's playback rate: exactly 1.0 (no effect
+ * whatsoever) unless vibrato is both turned on AND the zone supports it (piano never does,
+ * regardless of the toggle). */
+internal fun effectiveVibrato(vibratoEnabled: Boolean, zone: Sf2Zone, phase: Double, depthCents: Double): Double =
+    if (vibratoEnabled && zone.vibratoCapable) vibratoMultiplier(phase, depthCents) else 1.0
+
 class PitchEngine {
     companion object {
         private const val SAMPLE_RATE = 44100
         private const val FADE_DURATION_MS = 50L
+        private const val VIBRATO_RATE_HZ = 5.5
+        private const val VIBRATO_DEPTH_CENTS = 30.0
 
         /** Upper bound on how long a caller should ever wait on isAudible() before giving up and
          * starting the next engine anyway - a safety net in case a device never advances
@@ -50,10 +68,20 @@ class PitchEngine {
     @Volatile private var pendingZones: List<Sf2Zone>? = null
     private var currentZone: Sf2Zone? = null
     private var samplePos = 0.0
+    private var framesSinceRetrigger = 0L
+
+    // Not staged as pending like frequency/instrument - it's a continuous rate modulation, so
+    // toggling it produces at most a smooth pitch drift, not a waveform-value discontinuity.
+    @Volatile private var vibratoEnabled = false
+    private var vibratoPhase = 0.0
 
     fun setInstrument(newZones: List<Sf2Zone>) {
         if (newZones == zones) return
         pendingZones = newZones
+    }
+
+    fun setVibratoEnabled(enabled: Boolean) {
+        vibratoEnabled = enabled
     }
 
     // AudioTrack (MODE_STREAM) buffers several already-written frames ahead of what's actually
@@ -121,6 +149,7 @@ class PitchEngine {
                         pendingZones?.let { zones = it; pendingZones = null }
                         currentZone = pickZone(zones, frequency)
                         samplePos = 0.0
+                        framesSinceRetrigger = 0L
                     }
                     val zone = currentZone
                     if (zone == null) {
@@ -128,8 +157,18 @@ class PitchEngine {
                         phase += 2.0 * PI * frequency / SAMPLE_RATE
                     } else {
                         buffer[i] = sampleAt(zone, samplePos) * amplitude.toFloat()
-                        samplePos += (frequency / zone.rootFrequency) * (zone.sampleRate.toDouble() / SAMPLE_RATE)
+                        val vibrato = effectiveVibrato(vibratoEnabled, zone, vibratoPhase, VIBRATO_DEPTH_CENTS)
+                        samplePos += (frequency * vibrato / zone.rootFrequency) * (zone.sampleRate.toDouble() / SAMPLE_RATE)
+                        vibratoPhase += 2.0 * PI * VIBRATO_RATE_HZ / SAMPLE_RATE
                         if (zone.loop && samplePos >= zone.loopEnd) samplePos -= (zone.loopEnd - zone.loopStart)
+                        // Struck/decaying instruments (piano) re-strike the note on a timer
+                        // instead of looping or holding forever - measured in real output frames
+                        // so it's independent of the pitch-dependent rate samplePos advances at.
+                        framesSinceRetrigger++
+                        if (shouldRetrigger(zone, framesSinceRetrigger, SAMPLE_RATE)) {
+                            samplePos = 0.0
+                            framesSinceRetrigger = 0L
+                        }
                     }
                     framesWritten++
                     if (amplitude > 0.0001) lastAudibleFrame = framesWritten

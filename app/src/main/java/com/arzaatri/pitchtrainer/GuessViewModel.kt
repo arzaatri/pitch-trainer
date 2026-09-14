@@ -57,6 +57,8 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
 
     var instrument by mutableStateOf(Instrument.SINE)
         private set
+    var isVibratoEnabled by mutableStateOf(false)
+        private set
 
     init {
         settings.addAll(SettingsStore.load(app, PREF_KEY_GUESS_SETTINGS).toList())
@@ -64,6 +66,8 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
         val storedInstrument = SettingsStore.getString(app, PREF_KEY_INSTRUMENT, Instrument.SINE.name)
         instrument = Instrument.entries.find { it.name == storedInstrument } ?: Instrument.SINE
         if (instrument != Instrument.SINE) loadInstrument(instrument)
+        isVibratoEnabled = SettingsStore.getBoolean(app, PREF_KEY_VIBRATO, false)
+        engine.setVibratoEnabled(isVibratoEnabled)
         generateNewTask()
     }
 
@@ -72,6 +76,12 @@ class GuessViewModel(app: Application) : AndroidViewModel(app) {
         instrument = newInstrument
         SettingsStore.putString(getApplication(), PREF_KEY_INSTRUMENT, newInstrument.name)
         loadInstrument(newInstrument)
+    }
+
+    fun toggleVibrato() {
+        isVibratoEnabled = !isVibratoEnabled
+        SettingsStore.putBoolean(getApplication(), PREF_KEY_VIBRATO, isVibratoEnabled)
+        engine.setVibratoEnabled(isVibratoEnabled)
     }
 
     /** Parsing the soundfont asset is only needed off the Sine default, and takes a few hundred

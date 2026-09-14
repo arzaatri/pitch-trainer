@@ -9,6 +9,7 @@ const val PREF_KEY_TUNE_SETTINGS = "tune_settings"
 const val PREF_KEY_GUESS_SETTINGS = "guess_settings"
 const val PREF_KEY_TUNE_DIFFICULTY = "tune_difficulty"
 const val PREF_KEY_INSTRUMENT = "instrument"
+const val PREF_KEY_VIBRATO = "vibrato_enabled"
 private const val PREF_KEY_HIGH_PITCH_WARNING_DISMISSED = "high_pitch_warning_dismissed"
 private const val PREF_KEY_LOW_PITCH_WARNING_DISMISSED = "low_pitch_warning_dismissed"
 private const val PREF_KEY_GUESS_EASY_MODE = "guess_easy_mode"
@@ -73,6 +74,16 @@ object SettingsStore {
     fun putString(context: Context, key: String, value: String) {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putString(key, value).apply()
+    }
+
+    fun getBoolean(context: Context, key: String, default: Boolean): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getBoolean(key, default)
+    }
+
+    fun putBoolean(context: Context, key: String, value: Boolean) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(key, value).apply()
     }
 
     private fun encode(active: BooleanArray): String {

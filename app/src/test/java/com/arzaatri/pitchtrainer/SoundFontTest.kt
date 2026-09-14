@@ -8,12 +8,14 @@ import org.junit.Test
 
 class SoundFontTest {
 
-    private fun zone(keyLo: Int, keyHi: Int, pcm: ShortArray = shortArrayOf(0, 0), gain: Int = 0) =
-        Sf2Zone(
-            keyLo = keyLo, keyHi = keyHi, rootKey = 69, pitchCorrectionCents = 0,
-            sampleRate = 44100, loop = false, loopStart = 0, loopEnd = pcm.size,
-            attenuationCb = gain, pcm = pcm,
-        )
+    private fun zone(
+        keyLo: Int, keyHi: Int, pcm: ShortArray = shortArrayOf(0, 0), gain: Int = 0,
+        retriggerSeconds: Double = 0.0, vibratoCapable: Boolean = false,
+    ) = Sf2Zone(
+        keyLo = keyLo, keyHi = keyHi, rootKey = 69, pitchCorrectionCents = 0,
+        sampleRate = 44100, loop = false, loopStart = 0, loopEnd = pcm.size,
+        attenuationCb = gain, pcm = pcm, retriggerSeconds = retriggerSeconds, vibratoCapable = vibratoCapable,
+    )
 
     @Test
     fun `pickZone is null for an empty instrument`() {
@@ -51,6 +53,55 @@ class SoundFontTest {
     fun `sampleAt reads past the end as silence instead of crashing`() {
         val z = zone(keyLo = 0, keyHi = 127, pcm = shortArrayOf(16384))
         assertEquals(0f, sampleAt(z, 5.0), 0f)
+    }
+
+    @Test
+    fun `shouldRetrigger never fires for an instrument without retriggering`() {
+        val violin = zone(keyLo = 0, keyHi = 127, retriggerSeconds = 0.0)
+        assertTrue(!shouldRetrigger(violin, framesSinceRetrigger = Long.MAX_VALUE, sampleRateOut = 44100))
+    }
+
+    @Test
+    fun `shouldRetrigger fires once the wall-clock threshold is reached, independent of pitch`() {
+        val piano = zone(keyLo = 0, keyHi = 127, retriggerSeconds = 3.0)
+        val threshold = (3.0 * 44100).toLong()
+        assertTrue(!shouldRetrigger(piano, framesSinceRetrigger = threshold - 1, sampleRateOut = 44100))
+        assertTrue(shouldRetrigger(piano, framesSinceRetrigger = threshold, sampleRateOut = 44100))
+    }
+
+    @Test
+    fun `vibratoMultiplier is a no-op at phase zero and swings symmetrically around it`() {
+        assertEquals(1.0, vibratoMultiplier(phase = 0.0, depthCents = 30.0), 1e-9)
+        val up = vibratoMultiplier(phase = Math.PI / 2, depthCents = 30.0)
+        val down = vibratoMultiplier(phase = -Math.PI / 2, depthCents = 30.0)
+        assertTrue(up > 1.0)
+        assertEquals(1.0, up * down, 1e-9) // symmetric in cents => reciprocal in linear ratio
+    }
+
+    @Test
+    fun `effectiveVibrato is exactly 1_0 (no effect at all) once the toggle is off`() {
+        val violin = zone(keyLo = 0, keyHi = 127, vibratoCapable = true)
+        // Sweep the whole phase cycle - at every point in it, "off" must mean exactly no change,
+        // not "small" or "averages out" - this is the literal claim the toggle makes to the user.
+        var phase = 0.0
+        while (phase < 2 * Math.PI) {
+            assertEquals(1.0, effectiveVibrato(vibratoEnabled = false, violin, phase, depthCents = 30.0), 0.0)
+            phase += 0.1
+        }
+    }
+
+    @Test
+    fun `effectiveVibrato ignores the toggle entirely for a zone that isn't vibrato-capable`() {
+        // Piano zones never set vibratoCapable, so even if the shared toggle were left on from a
+        // prior Violin session, switching to Piano must never carry vibrato over.
+        val piano = zone(keyLo = 0, keyHi = 127, vibratoCapable = false)
+        assertEquals(1.0, effectiveVibrato(vibratoEnabled = true, piano, phase = Math.PI / 2, depthCents = 30.0), 0.0)
+    }
+
+    @Test
+    fun `effectiveVibrato does modulate when on and the zone supports it`() {
+        val violin = zone(keyLo = 0, keyHi = 127, vibratoCapable = true)
+        assertTrue(effectiveVibrato(vibratoEnabled = true, violin, Math.PI / 2, depthCents = 30.0) != 1.0)
     }
 
     // Exercises the real bundled asset end-to-end so a corrupt download or a parser bug that

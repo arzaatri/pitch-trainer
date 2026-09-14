@@ -198,6 +198,10 @@ fun PitchApp(
                 tuneVm.selectInstrument(it)
                 guessVm.selectInstrument(it)
             }
+            val onToggleVibrato: () -> Unit = {
+                tuneVm.toggleVibrato()
+                guessVm.toggleVibrato()
+            }
             when (panel) {
                 Panel.TUNE -> SettingsSheet(
                     title = "Tune Settings",
@@ -211,6 +215,8 @@ fun PitchApp(
                     context = context,
                     instrument = tuneVm.instrument,
                     onSelectInstrument = onSelectInstrument,
+                    isVibratoEnabled = tuneVm.isVibratoEnabled,
+                    onToggleVibrato = onToggleVibrato,
                 )
                 Panel.GUESS -> SettingsSheet(
                     title = "Guess Settings",
@@ -224,6 +230,8 @@ fun PitchApp(
                     context = context,
                     instrument = guessVm.instrument,
                     onSelectInstrument = onSelectInstrument,
+                    isVibratoEnabled = guessVm.isVibratoEnabled,
+                    onToggleVibrato = onToggleVibrato,
                 )
             }
         }
